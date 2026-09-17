@@ -1947,6 +1947,26 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 			}
 		}
 	}
+
+	var loadedNames []string
+	seenNames := make(map[string]bool)
+	for _, m := range cfg.ModelList {
+		if m != nil && m.Enabled {
+			name := strings.TrimSpace(m.ModelName)
+			if name == "" {
+				name = strings.TrimSpace(m.Model)
+			}
+			if name != "" && !seenNames[name] {
+				seenNames[name] = true
+				loadedNames = append(loadedNames, name)
+			}
+		}
+	}
+	logger.InfoCF("config", "PicoClaw model registry loaded", map[string]any{
+		"total_models":  len(loadedNames),
+		"current_model": cfg.Agents.Defaults.ModelName,
+		"provider":      cfg.Agents.Defaults.Provider,
+	})
 }
 
 // discoverGeminiModels queries the official Google Gemini models.list endpoint
@@ -1970,13 +1990,13 @@ func discoverGeminiModels(geminiBase, geminiKey string) []string {
 	client := &http.Client{Timeout: 6 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		logger.DebugCF("config", "Gemini models.list discovery request failed", map[string]any{"error": err.Error()})
+		logger.WarnCF("config", "Gemini models.list discovery request failed", map[string]any{"error": err.Error()})
 		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.DebugCF("config", "Gemini models.list returned non-200 status", map[string]any{"status": resp.StatusCode})
+		logger.WarnCF("config", "Gemini models.list returned non-200 status", map[string]any{"status": resp.StatusCode})
 		return nil
 	}
 

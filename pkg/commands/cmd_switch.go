@@ -45,11 +45,18 @@ func formatModelList(rt *Runtime) string {
 		if p == "" {
 			p = "other"
 		}
-		// Skip prefixed aliases in display to keep list clean and readable
-		if strings.HasPrefix(m.ModelName, p+"/") {
+		modelName := strings.TrimSpace(m.ModelName)
+		if modelName == "" {
+			modelName = strings.TrimSpace(m.Model)
+		}
+		if modelName == "" {
 			continue
 		}
-		key := fmt.Sprintf("%s:%s", p, m.ModelName)
+		// Skip prefixed aliases in display to keep list clean and readable
+		if strings.HasPrefix(modelName, p+"/") {
+			continue
+		}
+		key := fmt.Sprintf("%s:%s", p, modelName)
 		if seen[key] {
 			continue
 		}
@@ -58,7 +65,7 @@ func formatModelList(rt *Runtime) string {
 		if _, exists := providerModels[p]; !exists {
 			providersOrder = append(providersOrder, p)
 		}
-		providerModels[p] = append(providerModels[p], m.ModelName)
+		providerModels[p] = append(providerModels[p], modelName)
 	}
 
 	sb.WriteString("Available Providers & Models:\n")
@@ -110,6 +117,7 @@ func switchCommand() Definition {
 				if err == nil {
 					return req.Reply(fmt.Sprintf("Switched model from %s to %s", oldModel, target))
 				}
+				return req.Reply(fmt.Sprintf("%s\n\n%s", err.Error(), formatModelList(rt)))
 			}
 
 			return req.Reply(formatModelList(rt))
@@ -128,14 +136,19 @@ func switchCommand() Definition {
 						// Bare "/switch model" -> show model list
 						return req.Reply(formatModelList(rt))
 					}
-					// Parse: /switch model to <value>
-					value := nthToken(req.Text, 3) // tokens: [/switch, model, to, <value>]
-					if nthToken(req.Text, 2) != "to" || value == "" {
+					// Parse: /switch model to <value> OR /switch model <value>
+					var value string
+					if strings.EqualFold(nthToken(req.Text, 2), "to") {
+						value = strings.TrimSpace(strings.Join(tokens[3:], " "))
+					} else {
+						value = strings.TrimSpace(strings.Join(tokens[2:], " "))
+					}
+					if value == "" {
 						return req.Reply("Usage: /switch model to <name>")
 					}
 					oldModel, err := rt.SwitchModel(value)
 					if err != nil {
-						return req.Reply(err.Error())
+						return req.Reply(fmt.Sprintf("%s\n\n%s", err.Error(), formatModelList(rt)))
 					}
 					return req.Reply(fmt.Sprintf("Switched model from %s to %s", oldModel, value))
 				},

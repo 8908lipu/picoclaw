@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 const (
 	geminiDefaultAPIBase                = "https://generativelanguage.googleapis.com/v1beta"
-	geminiDefaultModel                  = "gemini-2.0-flash"
+	geminiDefaultModel                  = "gemini-3.6-flash"
 	geminiDefaultStreamingReadIdleLimit = 5 * time.Minute
 )
 
@@ -46,8 +47,13 @@ func NewGeminiProvider(
 		client.Timeout = time.Duration(requestTimeoutSeconds) * time.Second
 	}
 
+	cleanKey := strings.TrimRight(strings.Trim(strings.TrimSpace(apiKey), "\"'`"), ".,;: \t\r\n")
+	if strings.HasSuffix(cleanKey, "batao") {
+		cleanKey = strings.TrimRight(strings.TrimSuffix(cleanKey, "batao"), ".,;: \t\r\n")
+	}
+
 	return &GeminiProvider{
-		apiKey:        strings.TrimSpace(apiKey),
+		apiKey:        cleanKey,
 		apiBase:       strings.TrimRight(strings.TrimSpace(apiBase), "/"),
 		httpClient:    client,
 		extraBody:     cloneAnyMap(extraBody),
@@ -82,8 +88,11 @@ func (p *GeminiProvider) Chat(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/models/%s:generateContent", p.apiBase, model)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+	endpoint := fmt.Sprintf("%s/models/%s:generateContent", p.apiBase, model)
+	if p.apiKey != "" {
+		endpoint = fmt.Sprintf("%s?key=%s", endpoint, url.QueryEscape(p.apiKey))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -149,8 +158,11 @@ func (p *GeminiProvider) ChatStreamEvents(
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", p.apiBase, model)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+	endpoint := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", p.apiBase, model)
+	if p.apiKey != "" {
+		endpoint = fmt.Sprintf("%s&key=%s", endpoint, url.QueryEscape(p.apiKey))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

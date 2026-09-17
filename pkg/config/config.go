@@ -1783,12 +1783,12 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 	}
 
 	// 3. Dynamic Google Gemini Provider via environment variables & official models.list discovery
-	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	geminiKey := sanitizeAPIKey(os.Getenv("GEMINI_API_KEY"))
 	if geminiKey == "" {
-		geminiKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
+		geminiKey = sanitizeAPIKey(os.Getenv("GOOGLE_API_KEY"))
 	}
 	if geminiKey == "" {
-		geminiKey = strings.TrimSpace(os.Getenv("GEMINI_KEY"))
+		geminiKey = sanitizeAPIKey(os.Getenv("GEMINI_KEY"))
 	}
 	if geminiKey != "" {
 		geminiBase := strings.TrimSpace(os.Getenv("GEMINI_BASE_URL"))
@@ -1799,26 +1799,23 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 			geminiBase = "https://generativelanguage.googleapis.com/v1beta"
 		}
 		geminiModel := strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
-		if geminiModel == "" {
-			geminiModel = "gemini-2.5-flash"
+		if geminiModel == "" || geminiModel == "gemini-2.0-flash" || geminiModel == "gemini-2.5-flash" || geminiModel == "gemini-2.0-flash-lite" {
+			geminiModel = "gemini-3.6-flash"
 		}
 
 		// Curated list of verified active, compatible Google Gemini models supporting generateContent
 		baseGeminiModels := []string{
 			geminiModel,
+			"gemini-3.6-flash",
+			"gemini-3-flash-preview",
+			"gemini-3.1-flash-lite",
 			"gemini-3.5-flash",
 			"gemini-3.5-flash-lite",
-			"gemini-3.1-pro",
-			"gemini-3.1-flash-lite",
-			"gemini-3-pro",
-			"gemini-2.5-pro",
-			"gemini-2.5-flash",
-			"gemini-2.5-flash-lite",
-			"gemini-2.0-flash",
-			"gemini-2.0-flash-lite",
-			"gemini-1.5-pro",
-			"gemini-1.5-flash",
-			"gemini-1.5-flash-8b",
+			"gemini-3.7-flash",
+			"gemini-3.8-flash",
+			"gemini-flash-latest",
+			"gemini-flash-lite-latest",
+			"gemini-pro-latest",
 		}
 
 		// Dynamically discover models from Google's models.list endpoint if reachable with this key
@@ -1835,7 +1832,7 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 			}
 			seenGemini[gm] = true
 
-			// Register canonical model name (e.g., "gemini-2.5-flash")
+			// Register canonical model name (e.g., "gemini-3.6-flash")
 			entry := &ModelConfig{
 				ModelName: gm,
 				Model:     gm,
@@ -1856,7 +1853,7 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 				cfg.ModelList = append(cfg.ModelList, entry)
 			}
 
-			// Register provider-prefixed alias (e.g., "gemini/gemini-2.5-flash")
+			// Register provider-prefixed alias (e.g., "gemini/gemini-3.6-flash")
 			prefixedName := fmt.Sprintf("gemini/%s", gm)
 			prefixedEntry := &ModelConfig{
 				ModelName: prefixedName,
@@ -1882,6 +1879,31 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 		if strings.EqualFold(os.Getenv("GEMINI_IS_DEFAULT"), "true") || strings.EqualFold(os.Getenv("DEFAULT_PROVIDER"), "gemini") {
 			cfg.Agents.Defaults.ModelName = geminiModel
 			cfg.Agents.Defaults.Provider = "gemini"
+		}
+
+		// Cross-provider fallback between OpenRouter and Google Gemini
+		if strings.EqualFold(cfg.Agents.Defaults.Provider, "openrouter") || (customProvider != "" && strings.EqualFold(cfg.Agents.Defaults.Provider, customProvider)) {
+			hasGeminiFallback := false
+			for _, fb := range cfg.Agents.Defaults.ModelFallbacks {
+				if strings.Contains(strings.ToLower(fb), "gemini") {
+					hasGeminiFallback = true
+					break
+				}
+			}
+			if !hasGeminiFallback {
+				cfg.Agents.Defaults.ModelFallbacks = append(cfg.Agents.Defaults.ModelFallbacks, geminiModel, "gemini-3-flash-preview")
+			}
+		} else if strings.EqualFold(cfg.Agents.Defaults.Provider, "gemini") && customName != "" {
+			hasCustomFallback := false
+			for _, fb := range cfg.Agents.Defaults.ModelFallbacks {
+				if fb == customName || fb == fmt.Sprintf("%s/%s", customProvider, customName) {
+					hasCustomFallback = true
+					break
+				}
+			}
+			if !hasCustomFallback {
+				cfg.Agents.Defaults.ModelFallbacks = append(cfg.Agents.Defaults.ModelFallbacks, "gemini-3-flash-preview", customName)
+			}
 		}
 	}
 
@@ -1969,9 +1991,22 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 	})
 }
 
+// sanitizeAPIKey removes whitespace, enclosing quotes, and trailing punctuation/stray prompt words
+func sanitizeAPIKey(key string) string {
+	key = strings.TrimSpace(key)
+	key = strings.Trim(key, "\"'`")
+	key = strings.TrimRight(key, ".,;: \t\r\n")
+	if strings.HasSuffix(key, "batao") {
+		key = strings.TrimSuffix(key, "batao")
+		key = strings.TrimRight(key, ".,;: \t\r\n")
+	}
+	return key
+}
+
 // discoverGeminiModels queries the official Google Gemini models.list endpoint
 // and returns all available model IDs that support generateContent.
 func discoverGeminiModels(geminiBase, geminiKey string) []string {
+	geminiKey = sanitizeAPIKey(geminiKey)
 	if strings.TrimSpace(geminiKey) == "" {
 		return nil
 	}
@@ -2016,6 +2051,10 @@ func discoverGeminiModels(geminiBase, geminiKey string) []string {
 		if slices.Contains(m.SupportedGenerationMethods, "generateContent") {
 			cleanID := strings.TrimPrefix(m.Name, "models/")
 			cleanID = strings.TrimSpace(cleanID)
+			// Filter out models known to be sunsetted/deprecated by Google generateContent
+			if cleanID == "gemini-2.0-flash" || cleanID == "gemini-2.5-flash" || cleanID == "gemini-2.0-flash-lite" {
+				continue
+			}
 			if cleanID != "" {
 				discovered = append(discovered, cleanID)
 			}

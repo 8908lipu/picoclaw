@@ -823,6 +823,12 @@ func transientLLMRetryReason(err error) (string, bool) {
 		return "", false
 	}
 
+	// If all fallback candidates were already tried and exhausted, do not retry in an outer loop.
+	var exhausted *providers.FallbackExhaustedError
+	if errors.As(err, &exhausted) {
+		return "", false
+	}
+
 	if failErr := providers.ClassifyError(err, "", ""); failErr != nil {
 		switch failErr.Reason {
 		case providers.FailoverTimeout:

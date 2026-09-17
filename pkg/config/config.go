@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1728,6 +1730,18 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 			cfg.ModelList = append([]*ModelConfig{modelEntry}, cfg.ModelList...)
 		}
 
+		// Also register provider-prefixed alias for custom model (e.g., "openrouter/z-ai/glm-5.2:free")
+		prefixedCustomName := fmt.Sprintf("%s/%s", customProvider, customName)
+		customPrefixedEntry := &ModelConfig{
+			ModelName: prefixedCustomName,
+			Model:     customModelID,
+			Provider:  customProvider,
+			APIBase:   customBase,
+			APIKeys:   secureKeys,
+			Enabled:   true,
+		}
+		cfg.ModelList = append(cfg.ModelList, customPrefixedEntry)
+
 		if rawFallbacks := strings.TrimSpace(os.Getenv("CUSTOM_MODEL_FALLBACKS")); rawFallbacks != "" {
 			parts := strings.Split(rawFallbacks, ",")
 			var cleanFallbacks []string
@@ -1744,6 +1758,17 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 						Enabled:   true,
 					}
 					cfg.ModelList = append(cfg.ModelList, fallbackEntry)
+
+					// Register prefixed alias for fallback
+					prefixedFallbackName := fmt.Sprintf("%s/%s", customProvider, fb)
+					cfg.ModelList = append(cfg.ModelList, &ModelConfig{
+						ModelName: prefixedFallbackName,
+						Model:     fb,
+						Provider:  customProvider,
+						APIBase:   customBase,
+						APIKeys:   secureKeys,
+						Enabled:   true,
+					})
 				}
 			}
 			modelEntry.Fallbacks = cleanFallbacks
@@ -1757,7 +1782,7 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 		}
 	}
 
-	// 3. Dynamic Google Gemini Provider via environment variables
+	// 3. Dynamic Google Gemini Provider via environment variables & official models.list discovery
 	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
 	if geminiKey == "" {
 		geminiKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
@@ -1775,17 +1800,32 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 		}
 		geminiModel := strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
 		if geminiModel == "" {
-			geminiModel = "gemini-2.0-flash"
+			geminiModel = "gemini-2.5-flash"
 		}
 
+		// Curated list of verified active, compatible Google Gemini models supporting generateContent
 		baseGeminiModels := []string{
 			geminiModel,
-			"gemini-2.5-flash",
-			"gemini-2.0-flash",
-			"gemini-1.5-flash",
+			"gemini-3.5-flash",
+			"gemini-3.5-flash-lite",
+			"gemini-3.1-pro",
+			"gemini-3.1-flash-lite",
+			"gemini-3-pro",
 			"gemini-2.5-pro",
+			"gemini-2.5-flash",
+			"gemini-2.5-flash-lite",
+			"gemini-2.0-flash",
+			"gemini-2.0-flash-lite",
 			"gemini-1.5-pro",
+			"gemini-1.5-flash",
+			"gemini-1.5-flash-8b",
 		}
+
+		// Dynamically discover models from Google's models.list endpoint if reachable with this key
+		if discovered := discoverGeminiModels(geminiBase, geminiKey); len(discovered) > 0 {
+			baseGeminiModels = append(baseGeminiModels, discovered...)
+		}
+
 		secureGeminiKeys := SecureStrings{NewSecureString(geminiKey)}
 
 		seenGemini := make(map[string]bool)
@@ -1795,7 +1835,7 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 			}
 			seenGemini[gm] = true
 
-			// Register canonical model name (e.g., "gemini-2.0-flash")
+			// Register canonical model name (e.g., "gemini-2.5-flash")
 			entry := &ModelConfig{
 				ModelName: gm,
 				Model:     gm,
@@ -1816,7 +1856,7 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 				cfg.ModelList = append(cfg.ModelList, entry)
 			}
 
-			// Register provider-prefixed alias (e.g., "gemini/gemini-2.0-flash")
+			// Register provider-prefixed alias (e.g., "gemini/gemini-2.5-flash")
 			prefixedName := fmt.Sprintf("gemini/%s", gm)
 			prefixedEntry := &ModelConfig{
 				ModelName: prefixedName,
@@ -1907,6 +1947,65 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 			}
 		}
 	}
+}
+
+// discoverGeminiModels queries the official Google Gemini models.list endpoint
+// and returns all available model IDs that support generateContent.
+func discoverGeminiModels(geminiBase, geminiKey string) []string {
+	if strings.TrimSpace(geminiKey) == "" {
+		return nil
+	}
+	baseURL := strings.TrimRight(strings.TrimSpace(geminiBase), "/")
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta"
+	}
+
+	endpoint := fmt.Sprintf("%s/models?key=%s", baseURL, url.QueryEscape(geminiKey))
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("x-goog-api-key", geminiKey)
+
+	client := &http.Client{Timeout: 6 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.DebugCF("config", "Gemini models.list discovery request failed", map[string]any{"error": err.Error()})
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.DebugCF("config", "Gemini models.list returned non-200 status", map[string]any{"status": resp.StatusCode})
+		return nil
+	}
+
+	var result struct {
+		Models []struct {
+			Name                       string   `json:"name"`
+			SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil
+	}
+
+	var discovered []string
+	for _, m := range result.Models {
+		if slices.Contains(m.SupportedGenerationMethods, "generateContent") {
+			cleanID := strings.TrimPrefix(m.Name, "models/")
+			cleanID = strings.TrimSpace(cleanID)
+			if cleanID != "" {
+				discovered = append(discovered, cleanID)
+			}
+		}
+	}
+
+	if len(discovered) > 0 {
+		logger.InfoCF("config", "Discovered compatible Gemini models via models.list API", map[string]any{"count": len(discovered)})
+	}
+	return discovered
 }
 
 func MakeBackup(path string) error {

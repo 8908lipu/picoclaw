@@ -52,6 +52,7 @@ func TestClassifyError_StatusCodes(t *testing.T) {
 		{401, FailoverAuth},
 		{403, FailoverAuth},
 		{402, FailoverBilling},
+		{404, FailoverNetwork},
 		{408, FailoverTimeout},
 		{429, FailoverRateLimit},
 		{400, FailoverFormat},

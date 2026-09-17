@@ -78,6 +78,10 @@ var (
 		substr("unexpected eof"),
 		substr("read: eof"),
 		substr("write: eof"),
+		substr("no endpoints found"),
+		substr("support tool use"),
+		substr("model is unavailable"),
+		substr("not a valid model id"),
 	}
 
 	billingPatterns = []errorPattern{
@@ -281,6 +285,8 @@ func classifyByStatus(status int) FailoverReason {
 		return FailoverAuth
 	case status == 402:
 		return FailoverBilling
+	case status == 404:
+		return FailoverNetwork
 	case status == 408:
 		return FailoverTimeout
 	case status == 429:

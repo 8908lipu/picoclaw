@@ -230,6 +230,34 @@ func TestBuiltinListSkills_UsesRuntimeSkillNames(t *testing.T) {
 	}
 }
 
+func TestBuiltinListBare_ShowsSkillsAndCategories(t *testing.T) {
+	defs := BuiltinDefinitions()
+	rt := &Runtime{
+		ListSkillNames: func() []string {
+			return []string{"web-research", "summarize"}
+		},
+	}
+	ex := NewExecutor(NewRegistry(defs), rt)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/list",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("/list: outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if !strings.Contains(reply, "web-research") || !strings.Contains(reply, "summarize") {
+		t.Fatalf("/list reply=%q, want installed skill names", reply)
+	}
+	if !strings.Contains(reply, "Categories:") {
+		t.Fatalf("/list reply=%q, want categories", reply)
+	}
+}
+
 func TestBuiltinListMCP_UsesRuntimeServerStatus(t *testing.T) {
 	rt := &Runtime{
 		ListMCPServers: func(context.Context) []MCPServerInfo {

@@ -7,5 +7,7 @@ build/
 config/
 .env
 .env.example
-*.md
+/*.md
+!skills/**
+!workspace/**
 assets/

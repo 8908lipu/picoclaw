@@ -27,6 +27,10 @@ COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Copy builtin skills into runtime image
+COPY skills /skills
+
+
 # Default port for local testing; Render injects its own $PORT dynamically
 ENV PORT=18790
 EXPOSE 18790

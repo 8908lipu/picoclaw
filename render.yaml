@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: picoclaw
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USERS
+        sync: false
+      - key: CUSTOM_MODEL_NAME
+        sync: false
+      - key: CUSTOM_MODEL_PROVIDER
+        sync: false
+      - key: CUSTOM_MODEL_BASE_URL
+        sync: false
+      - key: CUSTOM_MODEL_API_KEY
+        sync: false
+      - key: CUSTOM_MODEL_IDENTIFIER
+        sync: false
+      - key: CUSTOM_MODEL_FALLBACKS
+        sync: false

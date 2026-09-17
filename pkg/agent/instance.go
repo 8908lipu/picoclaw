@@ -765,6 +765,9 @@ func closeUnreferencedStatefulProviders(
 func initSessionStore(dir string) session.SessionStore {
 	supabaseURL := strings.TrimSpace(os.Getenv("SUPABASE_URL"))
 	supabaseKey := strings.TrimSpace(os.Getenv("SUPABASE_KEY"))
+	if supabaseKey == "" {
+		supabaseKey = strings.TrimSpace(os.Getenv("SUPABASE_SERVICE_ROLE_KEY"))
+	}
 	if supabaseURL != "" && supabaseKey != "" {
 		supaStore, err := memory.NewSupabaseStore(supabaseURL, supabaseKey)
 		if err != nil {

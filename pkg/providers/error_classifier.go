@@ -82,6 +82,8 @@ var (
 		substr("support tool use"),
 		substr("model is unavailable"),
 		substr("not a valid model id"),
+		substr("maximum context length"),
+		substr("context_length_exceeded"),
 	}
 
 	billingPatterns = []errorPattern{

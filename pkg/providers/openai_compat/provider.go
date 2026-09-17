@@ -176,6 +176,9 @@ func (p *Provider) buildRequestBody(
 	}
 
 	if maxTokens, ok := common.AsInt(options["max_tokens"]); ok {
+		if maxTokens > 4096 && (strings.Contains(strings.ToLower(model), "glm") || strings.Contains(strings.ToLower(model), ":free")) {
+			maxTokens = 4096
+		}
 		fieldName := p.maxTokensField
 		if fieldName == "" {
 			lowerModel := strings.ToLower(model)
@@ -497,12 +500,24 @@ func (p *Provider) Chat(
 
 	if resp.StatusCode != http.StatusOK {
 		errResp := common.HandleErrorResponse(resp, p.apiBase)
-		if len(tools) > 0 && errResp != nil {
+		if errResp != nil {
 			errStr := strings.ToLower(errResp.Error())
-			if strings.Contains(errStr, "tool use") || strings.Contains(errStr, "support tool") || strings.Contains(errStr, "no endpoints found") {
+			if len(tools) > 0 && (strings.Contains(errStr, "tool use") || strings.Contains(errStr, "support tool") || strings.Contains(errStr, "no endpoints found")) {
 				logger.WarnCF("provider.openai_compat", "Model endpoint does not support tool use; retrying without tools",
 					map[string]any{"model": model, "provider": p.providerName})
 				return p.Chat(ctx, messages, nil, model, options)
+			}
+			if (strings.Contains(errStr, "maximum context length") || strings.Contains(errStr, "context_length_exceeded")) && strings.Contains(errStr, "max_tokens") {
+				if currentMax, ok := common.AsInt(options["max_tokens"]); ok && currentMax > 2048 {
+					newOpts := make(map[string]any, len(options))
+					for k, v := range options {
+						newOpts[k] = v
+					}
+					newOpts["max_tokens"] = 2048
+					logger.WarnCF("provider.openai_compat", "Context limit exceeded due to max_tokens; reducing to 2048 and retrying",
+						map[string]any{"model": model, "provider": p.providerName})
+					return p.Chat(ctx, messages, tools, model, newOpts)
+				}
 			}
 		}
 		return nil, errResp
@@ -582,12 +597,24 @@ func (p *Provider) ChatStreamEvents(
 
 	if resp.StatusCode != http.StatusOK {
 		errResp := common.HandleErrorResponse(resp, p.apiBase)
-		if len(tools) > 0 && errResp != nil {
+		if errResp != nil {
 			errStr := strings.ToLower(errResp.Error())
-			if strings.Contains(errStr, "tool use") || strings.Contains(errStr, "support tool") || strings.Contains(errStr, "no endpoints found") {
+			if len(tools) > 0 && (strings.Contains(errStr, "tool use") || strings.Contains(errStr, "support tool") || strings.Contains(errStr, "no endpoints found")) {
 				logger.WarnCF("provider.openai_compat", "Model endpoint does not support tool use; retrying stream without tools",
 					map[string]any{"model": model, "provider": p.providerName})
 				return p.ChatStreamEvents(ctx, messages, nil, model, options, onChunk)
+			}
+			if (strings.Contains(errStr, "maximum context length") || strings.Contains(errStr, "context_length_exceeded")) && strings.Contains(errStr, "max_tokens") {
+				if currentMax, ok := common.AsInt(options["max_tokens"]); ok && currentMax > 2048 {
+					newOpts := make(map[string]any, len(options))
+					for k, v := range options {
+						newOpts[k] = v
+					}
+					newOpts["max_tokens"] = 2048
+					logger.WarnCF("provider.openai_compat", "Context limit exceeded due to max_tokens; reducing to 2048 and retrying stream",
+						map[string]any{"model": model, "provider": p.providerName})
+					return p.ChatStreamEvents(ctx, messages, tools, model, newOpts, onChunk)
+				}
 			}
 		}
 		return nil, errResp

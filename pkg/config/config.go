@@ -1752,6 +1752,9 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 
 		cfg.Agents.Defaults.ModelName = customName
 		cfg.Agents.Defaults.Provider = customProvider
+		if cfg.Agents.Defaults.MaxTokens >= 32768 {
+			cfg.Agents.Defaults.MaxTokens = 4096
+		}
 	}
 
 	// 3. Dynamic Google Gemini Provider via environment variables

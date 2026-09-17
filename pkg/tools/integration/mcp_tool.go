@@ -256,7 +256,14 @@ func (t *MCPTool) Execute(ctx context.Context, args map[string]any) *ToolResult 
 	startedAt := time.Now()
 	t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallStart, startedAt, false, "")
 
-	result, err := t.manager.CallTool(ctx, t.serverName, t.tool.Name, args)
+	callCtx := ctx
+	var cancel context.CancelFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		callCtx, cancel = context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+	}
+
+	result, err := t.manager.CallTool(callCtx, t.serverName, t.tool.Name, args)
 	if err != nil {
 		t.publishRuntimeEvent(ctx, runtimeevents.KindMCPToolCallEnd, startedAt, true, err.Error())
 		return ErrorResult(fmt.Sprintf("MCP tool execution failed: %v", err)).WithError(err)

@@ -1754,7 +1754,95 @@ func applyDynamicEnvironmentOverrides(cfg *Config) {
 		cfg.Agents.Defaults.Provider = customProvider
 	}
 
-	// 3. Telegram Bot integration via TELEGRAM_BOT_TOKEN
+	// 3. Dynamic Google Gemini Provider via environment variables
+	geminiKey := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
+	if geminiKey == "" {
+		geminiKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
+	}
+	if geminiKey == "" {
+		geminiKey = strings.TrimSpace(os.Getenv("GEMINI_KEY"))
+	}
+	if geminiKey != "" {
+		geminiBase := strings.TrimSpace(os.Getenv("GEMINI_BASE_URL"))
+		if geminiBase == "" {
+			geminiBase = strings.TrimSpace(os.Getenv("GEMINI_ENDPOINT"))
+		}
+		if geminiBase == "" {
+			geminiBase = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		geminiModel := strings.TrimSpace(os.Getenv("GEMINI_MODEL"))
+		if geminiModel == "" {
+			geminiModel = "gemini-2.0-flash"
+		}
+
+		baseGeminiModels := []string{
+			geminiModel,
+			"gemini-2.5-flash",
+			"gemini-2.0-flash",
+			"gemini-1.5-flash",
+			"gemini-2.5-pro",
+			"gemini-1.5-pro",
+		}
+		secureGeminiKeys := SecureStrings{NewSecureString(geminiKey)}
+
+		seenGemini := make(map[string]bool)
+		for _, gm := range baseGeminiModels {
+			if gm == "" || seenGemini[gm] {
+				continue
+			}
+			seenGemini[gm] = true
+
+			// Register canonical model name (e.g., "gemini-2.0-flash")
+			entry := &ModelConfig{
+				ModelName: gm,
+				Model:     gm,
+				Provider:  "gemini",
+				APIBase:   geminiBase,
+				APIKeys:   secureGeminiKeys,
+				Enabled:   true,
+			}
+			found := false
+			for i, m := range cfg.ModelList {
+				if m != nil && m.ModelName == gm {
+					cfg.ModelList[i] = entry
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.ModelList = append(cfg.ModelList, entry)
+			}
+
+			// Register provider-prefixed alias (e.g., "gemini/gemini-2.0-flash")
+			prefixedName := fmt.Sprintf("gemini/%s", gm)
+			prefixedEntry := &ModelConfig{
+				ModelName: prefixedName,
+				Model:     gm,
+				Provider:  "gemini",
+				APIBase:   geminiBase,
+				APIKeys:   secureGeminiKeys,
+				Enabled:   true,
+			}
+			pFound := false
+			for i, m := range cfg.ModelList {
+				if m != nil && m.ModelName == prefixedName {
+					cfg.ModelList[i] = prefixedEntry
+					pFound = true
+					break
+				}
+			}
+			if !pFound {
+				cfg.ModelList = append(cfg.ModelList, prefixedEntry)
+			}
+		}
+
+		if strings.EqualFold(os.Getenv("GEMINI_IS_DEFAULT"), "true") || strings.EqualFold(os.Getenv("DEFAULT_PROVIDER"), "gemini") {
+			cfg.Agents.Defaults.ModelName = geminiModel
+			cfg.Agents.Defaults.Provider = "gemini"
+		}
+	}
+
+	// 4. Telegram Bot integration via TELEGRAM_BOT_TOKEN
 	tgToken := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
 	if tgToken == "" {
 		tgToken = strings.TrimSpace(os.Getenv("PICOCLAW_CHANNELS_TELEGRAM_TOKEN"))

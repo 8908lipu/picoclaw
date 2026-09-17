@@ -306,7 +306,9 @@ func (al *AgentLoop) buildCommandsRuntime(
 			defer modelMu.Unlock()
 			modelFound := false
 			for _, modelCfg := range cfg.ModelList {
-				if modelCfg != nil && modelCfg.ModelName == value {
+				if modelCfg != nil && (modelCfg.ModelName == value || modelCfg.Model == value ||
+					fmt.Sprintf("%s/%s", modelCfg.Provider, modelCfg.Model) == value ||
+					fmt.Sprintf("%s/%s", modelCfg.Provider, modelCfg.ModelName) == value) {
 					modelFound = true
 					break
 				}

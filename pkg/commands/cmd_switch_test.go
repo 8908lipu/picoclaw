@@ -272,8 +272,75 @@ func TestSwitch_NoSubCommand(t *testing.T) {
 	if res.Outcome != OutcomeHandled {
 		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
 	}
-	// Should get usage message from executor's sub-command routing
+	// Should get usage or model list message
 	if reply == "" {
-		t.Fatal("expected usage reply for bare /switch")
+		t.Fatal("expected non-empty reply for bare /switch")
+	}
+}
+
+func TestSwitch_ModelListDisplay(t *testing.T) {
+	cfg := &config.Config{
+		ModelList: []*config.ModelConfig{
+			{ModelName: "z-ai/glm-5.2:free", Model: "z-ai/glm-5.2:free", Provider: "openrouter", Enabled: true},
+			{ModelName: "nvidia/nemotron-3.5-lightning:free", Model: "nvidia/nemotron-3.5-lightning:free", Provider: "openrouter", Enabled: true},
+			{ModelName: "gemini-2.5-flash", Model: "gemini-2.5-flash", Provider: "gemini", Enabled: true},
+		},
+	}
+	rt := &Runtime{
+		Config: cfg,
+		GetModelInfo: func() (string, string) {
+			return "z-ai/glm-5.2:free", "openrouter"
+		},
+	}
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
+
+	for _, cmd := range []string{"/switch", "/switch model", "/switch models", "/switch list"} {
+		var reply string
+		res := ex.Execute(context.Background(), Request{
+			Text: cmd,
+			Reply: func(text string) error {
+				reply = text
+				return nil
+			},
+		})
+		if res.Outcome != OutcomeHandled {
+			t.Fatalf("%s outcome=%v, want=%v", cmd, res.Outcome, OutcomeHandled)
+		}
+		if !strings.Contains(reply, "OpenRouter") {
+			t.Fatalf("%s reply missing OpenRouter: %s", cmd, reply)
+		}
+		if !strings.Contains(reply, "Google Gemini") {
+			t.Fatalf("%s reply missing Google Gemini: %s", cmd, reply)
+		}
+		if !strings.Contains(reply, "gemini-2.5-flash") {
+			t.Fatalf("%s reply missing gemini-2.5-flash: %s", cmd, reply)
+		}
+		if !strings.Contains(reply, "z-ai/glm-5.2:free (active)") {
+			t.Fatalf("%s reply missing active indicator: %s", cmd, reply)
+		}
+	}
+}
+
+func TestSwitch_DirectModelSwitch(t *testing.T) {
+	rt := &Runtime{
+		SwitchModel: func(value string) (string, error) {
+			return "old-model", nil
+		},
+	}
+	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), rt)
+
+	var reply string
+	res := ex.Execute(context.Background(), Request{
+		Text: "/switch gemini-2.5-flash",
+		Reply: func(text string) error {
+			reply = text
+			return nil
+		},
+	})
+	if res.Outcome != OutcomeHandled {
+		t.Fatalf("outcome=%v, want=%v", res.Outcome, OutcomeHandled)
+	}
+	if reply != "Switched model from old-model to gemini-2.5-flash" {
+		t.Fatalf("reply=%q, want success switch message", reply)
 	}
 }

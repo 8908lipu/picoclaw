@@ -15,17 +15,7 @@ func listCommand() Definition {
 				Name:        "models",
 				Description: "Configured models",
 				Handler: func(_ context.Context, req Request, rt *Runtime) error {
-					if rt == nil || rt.GetModelInfo == nil {
-						return req.Reply(unavailableMsg)
-					}
-					name, provider := rt.GetModelInfo()
-					if provider == "" {
-						provider = "configured default"
-					}
-					return req.Reply(fmt.Sprintf(
-						"Configured Model: %s\nProvider: %s\n\nTo change models, update config.json",
-						name, provider,
-					))
+					return req.Reply(formatModelList(rt))
 				},
 			},
 			{

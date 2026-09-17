@@ -156,11 +156,17 @@ type asyncTask struct {
 }
 
 func outboundMessageChannel(msg bus.OutboundMessage) string {
+	if msg.Channel != "" {
+		return msg.Channel
+	}
 	return msg.Context.Channel
 }
 
 func outboundMessageChatID(msg bus.OutboundMessage) string {
-	return msg.ChatID
+	if msg.ChatID != "" {
+		return msg.ChatID
+	}
+	return msg.Context.ChatID
 }
 
 func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {

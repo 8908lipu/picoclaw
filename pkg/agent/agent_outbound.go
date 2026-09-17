@@ -74,6 +74,8 @@ func (al *AgentLoop) PublishResponseIfNeeded(ctx context.Context, channel, chatI
 	}
 
 	msg := bus.OutboundMessage{
+		Channel:    channel,
+		ChatID:     chatID,
 		Context:    bus.NewOutboundContext(channel, chatID, ""),
 		SessionKey: sessionKey,
 		Content:    response,

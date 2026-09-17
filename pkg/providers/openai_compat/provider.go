@@ -496,7 +496,16 @@ func (p *Provider) Chat(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, common.HandleErrorResponse(resp, p.apiBase)
+		errResp := common.HandleErrorResponse(resp, p.apiBase)
+		if len(tools) > 0 && errResp != nil {
+			errStr := strings.ToLower(errResp.Error())
+			if strings.Contains(errStr, "tool use") || strings.Contains(errStr, "support tool") || strings.Contains(errStr, "no endpoints found") {
+				logger.WarnCF("provider.openai_compat", "Model endpoint does not support tool use; retrying without tools",
+					map[string]any{"model": model, "provider": p.providerName})
+				return p.Chat(ctx, messages, nil, model, options)
+			}
+		}
+		return nil, errResp
 	}
 
 	return common.ReadAndParseResponse(resp, p.apiBase)
@@ -572,7 +581,16 @@ func (p *Provider) ChatStreamEvents(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, common.HandleErrorResponse(resp, p.apiBase)
+		errResp := common.HandleErrorResponse(resp, p.apiBase)
+		if len(tools) > 0 && errResp != nil {
+			errStr := strings.ToLower(errResp.Error())
+			if strings.Contains(errStr, "tool use") || strings.Contains(errStr, "support tool") || strings.Contains(errStr, "no endpoints found") {
+				logger.WarnCF("provider.openai_compat", "Model endpoint does not support tool use; retrying stream without tools",
+					map[string]any{"model": model, "provider": p.providerName})
+				return p.ChatStreamEvents(ctx, messages, nil, model, options, onChunk)
+			}
+		}
+		return nil, errResp
 	}
 
 	return parseStreamResponse(ctx, withStreamingReadIdleTimeout(resp.Body, defaultStreamingReadIdleTimeout), onChunk)
